@@ -1,22 +1,32 @@
-import { Controller, Get, Post, Body, Param } from '@nestjs/common';
+import { Controller, Post, UploadedFiles, UseInterceptors, BadRequestException } from '@nestjs/common';
+import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import { TryonService } from './tryon.service';
 
 @Controller('tryon')
 export class TryonController {
   constructor(private readonly tryonService: TryonService) {}
 
-  @Get()
-  findAll() {
-    return this.tryonService.findAll();
-  }
-
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.tryonService.findOne(+id);
-  }
-
   @Post()
-  create(@Body() body: any) {
-    return this.tryonService.create(body);
+  @UseInterceptors(FileFieldsInterceptor([
+    { name: 'person', maxCount: 1 },
+    { name: 'garment', maxCount: 1 },
+  ]))
+  async createTryOn(
+    @UploadedFiles() files: { person?: Express.Multer.File[], garment?: Express.Multer.File[] },
+  ) {
+    // 1. Validate that the frontend actually sent both files
+    if (!files?.person || !files?.garment) {
+      throw new BadRequestException('Both a person and a garment image are required.');
+    }
+
+    // 2. Extract the raw binary data (buffers) from the uploaded files
+    const personBuffer = files.person[0].buffer;
+    const garmentBuffer = files.garment[0].buffer;
+
+    // 3. Hand the buffers over to the service to talk to Gemini
+    const imageBase64 = await this.tryonService.generateTryOnImage(personBuffer, garmentBuffer);
+
+    // 4. Send the generated image back to React
+    return { image: imageBase64 };
   }
 }
